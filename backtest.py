@@ -413,7 +413,9 @@ def update_stats(equity: float, profit: float, peak: float, max_dd: float) -> Tu
 def run_backtest(
     ticks: List[SimpleNamespace],
     daily_context_map: Dict[str, DailyContext],
+    opening_range_map: Dict[str, object],
 ) -> None:
+
     """Process ticks, generate signals, and simulate trades."""
 
     context: Dict = {}
@@ -462,12 +464,22 @@ def run_backtest(
                 f"| Prev High/Low: {day_ctx.prev_high:.2f}/{day_ctx.prev_low:.2f}"
             )
 
+        # Opening range info for this day (may be missing)
+        opening_ok = False
+        opening_pct = 0.0
+        day_or = opening_range_map.get(day_key)
+        if day_or is not None:
+            opening_ok = bool(getattr(day_or, "opening_range_ok", False))
+            opening_pct = float(getattr(day_or, "opening_range_pct_atr", 0.0) or 0.0)
+
         signal, details = generate_signal(
             tick,
             context,
             zone=zone,
             recent_candles=candles_for_signal,
             daily_context=day_ctx,
+            opening_range_ok=opening_ok,
+            opening_range_pct_atr=opening_pct,
         )
 
         base_signal = details.get("base_signal", "FLAT") if isinstance(details, dict) else "FLAT"
@@ -730,7 +742,7 @@ def main() -> None:
     # Group ticks by day so we can derive mock context when no prior day exists.
     grouped_ticks = group_ticks_by_day(ticks)
 
-    # Build ATRs and real context maps from daily bars.
+       # Build ATRs and real context maps from daily bars.
     daily_atr_map = build_daily_atr_map(daily_bars)
     daily_context_map = build_daily_context_map(daily_bars, daily_atr_map)
 
@@ -738,10 +750,12 @@ def main() -> None:
     # box zones and pattern logic can still run.
     ensure_context_with_mock(grouped_ticks, daily_context_map, daily_atr_map)
 
-    # (Optional) opening-range diagnostics – leave as-is if this already exists.
+    # Build opening-range map per day and (optionally) log diagnostics.
+    opening_range_map = build_opening_range_map(grouped_ticks, daily_atr_map)
     # log_opening_ranges(grouped_ticks, daily_atr_map)
 
-    run_backtest(ticks, daily_context_map)
+    run_backtest(ticks, daily_context_map, opening_range_map)
+
 
 
 if __name__ == "__main__":
